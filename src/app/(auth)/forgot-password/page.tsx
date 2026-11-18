@@ -50,8 +50,22 @@ export default function ForgotPasswordPage() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
+      <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8">
+        <div className="flex w-full max-w-md flex-col items-center gap-4">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-base shadow-xs">
+              A
+            </div>
+            <div className="flex flex-col">
+              <span className="text-base font-bold tracking-tight text-foreground leading-tight">
+                Aanand &amp; Co
+              </span>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                WhatsApp CRM
+              </span>
+            </div>
+          </div>
+          <Card className="w-full border-border bg-card">
           <CardHeader className="items-center text-center">
             <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
               <CheckCircle className="h-6 w-6 text-primary" />
@@ -79,13 +93,28 @@ export default function ForgotPasswordPage() {
             </Link>
           </CardContent>
         </Card>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8">
+      <div className="flex w-full max-w-md flex-col items-center gap-4">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-base shadow-xs">
+            A
+          </div>
+          <div className="flex flex-col">
+            <span className="text-base font-bold tracking-tight text-foreground leading-tight">
+              Aanand &amp; Co
+            </span>
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              WhatsApp CRM
+            </span>
+          </div>
+        </div>
+        <Card className="w-full border-border bg-card">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
             <MessageSquare className="h-6 w-6 text-primary" />
@@ -136,6 +165,7 @@ export default function ForgotPasswordPage() {
           </Link>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

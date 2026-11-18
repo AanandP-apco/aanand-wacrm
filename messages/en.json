@@ -17,7 +17,7 @@
     "linkInvalid": "That link couldn’t be used to sign you in. If you were confirming your email, it may already be verified — just sign in below. For a password reset, request a new link and open it in the same browser you requested it from."
   },
   "Sidebar": {
-    "title": "CRM Template for WhatsApp",
+    "title": "Aanand & Co",
     "primaryNav": "Primary",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
@@ -1676,7 +1676,7 @@
       "done": "Done",
       "dialogTitle": "Invite a teammate",
       "networkError": "Could not reach the server. Try again?",
-      "fallbackAccountName": "our wacrm account",
+      "fallbackAccountName": "Aanand & Co",
       "dialogDesc": "Generate a one-time invite link. Share it via WhatsApp, Slack, or any channel you like — no email service required.",
       "roleLabel": "Role",
       "validForLabel": "Link valid for",
@@ -1693,7 +1693,7 @@
       "labelTooLong": "Label must be {max} characters or fewer",
       "copied": "Invite link copied",
       "clipboardBlocked": "Clipboard blocked — copy the link manually",
-      "whatsappMessage": "Join {accountName} on wacrm using this link (valid for {expiresInDays} days): {url}",
+      "whatsappMessage": "Join {accountName} on Aanand & Co WhatsApp CRM using this link (valid for {expiresInDays} days): {url}",
       "createFailed": "Failed to create invitation"
     },
     "tagsAndFields": {
@@ -2269,7 +2269,7 @@
     "titleJoin": "Create account & join",
     "title": "Create account",
     "descJoin": "Verify your email, then accept the invitation to join your team.",
-    "desc": "Get started with CRM Template for WhatsApp",
+    "desc": "Get started with Aanand & Co WhatsApp CRM",
     "fullNameLabel": "Full name",
     "fullNamePlaceholder": "John Doe",
     "emailLabel": "Email",
@@ -2461,7 +2461,7 @@
     "lastMessage": " Last customer message: “{message}”"
   },
   "Metadata": {
-    "description": "Self-hostable CRM template for WhatsApp."
+    "description": "Aanand & Co WhatsApp CRM — shared inbox, contacts, sales pipelines, broadcasts, and no-code automations."
   },
   "Currency": {
     "USD": "US Dollar",
@@ -2494,7 +2494,7 @@
     "welcome_message": {
       "name": "Welcome Message",
       "description": "Auto-reply to first-time contacts with a greeting.",
-      "text": "Hi! 👋 Thanks for reaching out. We'll get back to you shortly."
+      "text": "Hi! 👋 Thanks for reaching out to Aanand & Co. We'll get back to you shortly."
     },
     "out_of_office": {
       "name": "Out of Office",
@@ -2518,7 +2518,7 @@
       "name": "Welcome menu",
       "description": "Greet customers who type a keyword and route them to the right agent based on whether they're new or existing.",
       "keywords": "support,help,hi",
-      "text": "Hi! 👋 Welcome to support. Are you an existing customer or new here?",
+      "text": "Hi! 👋 Welcome to Aanand & Co. Are you an existing customer or new here?",
       "footer": "Tap a button below to continue.",
       "existingButton": "Existing customer",
       "newButton": "New customer",
