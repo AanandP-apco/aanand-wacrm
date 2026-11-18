@@ -54,7 +54,7 @@
     "linkify-react": "^4.4.0",
     "linkifyjs": "^4.4.0",
     "lucide-react": "^1.70.0",
-    "next": "16.4.5",
+    "next": "16.4.6",
     "next-intl": "^4.14.9",
     "opus-recorder": "^8.0.5",
     "react": "19.2.4",
@@ -71,7 +71,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.8",
+    "eslint-config-next": "16.4.6",
     "prettier": "^3.10.1",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4",
@@ -80,9 +80,9 @@
   },
   "overrides": {
     "postcss": "^8.5.10",
-    "ip-address": "^10.7.1",
-    "fast-uri": "^3.1.8",
-    "hono": "^4.13.5",
+    "ip-address": "^10.7.6",
+    "fast-uri": "^3.1.9",
+    "hono": "^4.14.0",
     "js-yaml": "^4.3.2",
     "nanoid": "^3.3.17",
     "@babel/core": "^7.29.6",
@@ -91,7 +91,11 @@
     "brace-expansion@^5.0.0": "^5.0.12",
     "proxy-addr": "^2.0.8",
     "@modelcontextprotocol/sdk": "^1.31.0",
-    "undici": "^7.29.1",
-    "source-map-js": "^1.2.2"
+    "undici": "^7.30.2",
+    "source-map-js": "^1.2.2",
+    "minimatch": "^11.0.1",
+    "body-parser": "^2.3.1",
+    "qs": "^6.16.1",
+    "@hono/node-server": "^2.1.6"
   }
 }
