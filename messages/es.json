@@ -610,7 +610,12 @@
         "toastFailedUpdate": "Error al actualizar etiquetas",
         "toastAdded": "Se añadieron {tagCount} etiquetas a {contactCount} contactos",
         "toastRemoved": "Se quitaron {tagCount} etiquetas de {contactCount} contactos"
-      }
+      },
+      "selectAllAcrossPages": "Seleccionar los {count} contactos",
+      "allOnPageSelectedNotice": "Los {count} contactos de esta página están seleccionados.",
+      "allAcrossPagesSelected": "Los {count} contactos seleccionados.",
+      "selectedAllAcrossPages": "Se seleccionaron los {count} contactos",
+      "selectingAll": "Seleccionando todos..."
     },
     "form": {
       "addTitle": "Agregar contacto",

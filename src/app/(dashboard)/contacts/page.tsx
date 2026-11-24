@@ -100,8 +100,9 @@ export default function ContactsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Bulk selection (page-scoped — only the loaded rows are selectable)
+  // Bulk selection (persists across pages so users can select and act on contacts across pagination)
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectingAll, setSelectingAll] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkTagOpen, setBulkTagOpen] = useState(false);
   const [bulkTagContactIds, setBulkTagContactIds] = useState<string[]>([]);
@@ -136,10 +137,6 @@ export default function ContactsPage() {
   const fetchContacts = useCallback(async () => {
     const seq = ++fetchSeq.current;
     setLoading(true);
-    // The visible rows are about to change — drop any selection that
-    // referred to the old page/search results so the bulk bar can't
-    // act on rows the user can no longer see.
-    setSelected(new Set());
 
     const from = page * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
@@ -367,12 +364,60 @@ export default function ContactsPage() {
         : [...prev, tagId]
     );
     setPage(0);
+    setSelected(new Set());
   }
 
   function clearTagFilters() {
     setSelectedTagIds([]);
     setPage(0);
+    setSelected(new Set());
   }
+
+  const selectAllMatchingContacts = useCallback(async () => {
+    setSelectingAll(true);
+    try {
+      const term = search.trim();
+      if (selectedTagIds.length > 0) {
+        const { data, error } = await supabase.rpc('filter_contacts_by_tags', {
+          p_tag_ids: selectedTagIds,
+          p_search: contactSearchPattern(term),
+          p_limit: 10000,
+          p_offset: 0,
+        });
+        if (error) {
+          toast.error(t('toastFailedLoad'));
+          return;
+        }
+        const rows = (data ?? []) as { contact: Contact }[];
+        const ids = rows.map((r) => r.contact.id);
+        setSelected(new Set(ids));
+        toast.success(t('selectedAllAcrossPages', { count: ids.length }));
+      } else {
+        let query = supabase
+          .from('contacts')
+          .select('id')
+          .order('created_at', { ascending: false })
+          .limit(10000);
+
+        const searchFilter = contactSearchFilter(term, { includeEmail: true });
+        if (searchFilter) query = query.or(searchFilter);
+
+        const { data, error } = await query;
+        if (error) {
+          toast.error(t('toastFailedLoad'));
+          return;
+        }
+        const ids = (data ?? []).map((c) => c.id);
+        setSelected(new Set(ids));
+        toast.success(t('selectedAllAcrossPages', { count: ids.length }));
+      }
+    } catch (err) {
+      console.error('Failed to select all matching contacts:', err);
+      toast.error(t('toastFailedLoad'));
+    } finally {
+      setSelectingAll(false);
+    }
+  }, [supabase, search, selectedTagIds, t]);
 
   return (
     <div className="space-y-6">
@@ -426,9 +471,9 @@ export default function ContactsPage() {
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
-                // Reset pagination when the query changes — the result
-                // set shrinks/grows, page N may no longer be valid.
+                // Reset pagination and selection when the query changes
                 setPage(0);
+                setSelected(new Set());
               }}
               placeholder={t('searchPlaceholder')}
               className="pl-8 bg-card border-border text-foreground placeholder:text-muted-foreground"
@@ -531,48 +576,74 @@ export default function ContactsPage() {
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 dark:bg-primary/10 px-4 py-2.5 shadow-xs">
-          <div className="flex items-center gap-2">
-            <span className="size-2 rounded-full bg-primary animate-pulse" />
-            <p className="text-sm font-medium text-foreground">
-              {t('selectedCount', { count: selected.size })}
-            </p>
+        <div className="flex flex-col gap-2 rounded-xl border border-primary/20 bg-primary/5 dark:bg-primary/10 px-4 py-2.5 shadow-xs">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-primary animate-pulse" />
+              <p className="text-sm font-medium text-foreground">
+                {t('selectedCount', { count: selected.size })}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <GatedButton
+                variant="outline"
+                size="sm"
+                canAct={canEdit}
+                gateReason={tGate('reasons.addOrImportContacts')}
+                onClick={() => {
+                  setBulkTagContactIds([...selected]);
+                  setBulkTagOpen(true);
+                }}
+                className="border-primary/30 text-foreground hover:bg-primary/15 gap-1.5 h-8 text-xs font-medium"
+              >
+                <TagIcon className="size-3.5 text-primary" />
+                {t('manageTags')}
+              </GatedButton>
+              <GatedButton
+                variant="destructive"
+                size="sm"
+                canAct={canEdit}
+                gateReason={tGate('reasons.deleteContacts')}
+                onClick={() => setBulkDeleteOpen(true)}
+                className="gap-1.5 h-8 text-xs font-medium"
+              >
+                <Trash2 className="size-3.5" />
+                {t('deleteSelected')}
+              </GatedButton>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelected(new Set())}
+                className="text-muted-foreground hover:text-foreground h-8 text-xs cursor-pointer"
+              >
+                {t('clearSelection')}
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <GatedButton
-              variant="outline"
-              size="sm"
-              canAct={canEdit}
-              gateReason={tGate('reasons.addOrImportContacts')}
-              onClick={() => {
-                setBulkTagContactIds([...selected]);
-                setBulkTagOpen(true);
-              }}
-              className="border-primary/30 text-foreground hover:bg-primary/15 gap-1.5 h-8 text-xs font-medium"
-            >
-              <TagIcon className="size-3.5 text-primary" />
-              {t('manageTags')}
-            </GatedButton>
-            <GatedButton
-              variant="destructive"
-              size="sm"
-              canAct={canEdit}
-              gateReason={tGate('reasons.deleteContacts')}
-              onClick={() => setBulkDeleteOpen(true)}
-              className="gap-1.5 h-8 text-xs font-medium"
-            >
-              <Trash2 className="size-3.5" />
-              {t('deleteSelected')}
-            </GatedButton>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelected(new Set())}
-              className="text-muted-foreground hover:text-foreground h-8 text-xs"
-            >
-              {t('clearSelection')}
-            </Button>
-          </div>
+
+          {/* Select all across pages banner */}
+          {allOnPageSelected && totalCount > contacts.length && (
+            <div className="text-xs text-muted-foreground border-t border-primary/15 pt-2 flex items-center justify-between gap-2 flex-wrap">
+              {selected.size < totalCount ? (
+                <span>
+                  {t('allOnPageSelectedNotice', { count: contacts.length })}{' '}
+                  <button
+                    type="button"
+                    onClick={selectAllMatchingContacts}
+                    disabled={selectingAll}
+                    className="text-primary hover:underline font-semibold cursor-pointer ml-1 inline-flex items-center gap-1"
+                  >
+                    {selectingAll && <Loader2 className="size-3 animate-spin" />}
+                    {t('selectAllAcrossPages', { count: totalCount })}
+                  </button>
+                </span>
+              ) : (
+                <span className="text-primary font-medium">
+                  {t('allAcrossPagesSelected', { count: totalCount })}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 

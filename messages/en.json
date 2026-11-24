@@ -610,7 +610,12 @@
         "toastFailedUpdate": "Failed to update tags",
         "toastAdded": "Added {tagCount} tags to {contactCount} contacts",
         "toastRemoved": "Removed {tagCount} tags from {contactCount} contacts"
-      }
+      },
+      "selectAllAcrossPages": "Select all {count} contacts",
+      "allOnPageSelectedNotice": "All {count} contacts on this page are selected.",
+      "allAcrossPagesSelected": "All {count} contacts selected.",
+      "selectedAllAcrossPages": "Selected all {count} contacts",
+      "selectingAll": "Selecting all..."
     },
     "form": {
       "addTitle": "Add Contact",
