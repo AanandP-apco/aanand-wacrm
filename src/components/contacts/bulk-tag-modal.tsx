@@ -311,10 +311,11 @@ export function BulkTagModal({
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={() => toggleTag(tag.id)}
+                        onClick={(e) => e.stopPropagation()}
                         className={
                           action === 'add'
-                            ? 'data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600'
-                            : 'data-[state=checked]:bg-rose-600 data-[state=checked]:border-rose-600'
+                            ? 'data-checked:bg-emerald-600 data-checked:border-emerald-600 data-[checked]:bg-emerald-600 data-[checked]:border-emerald-600'
+                            : 'data-checked:bg-rose-600 data-checked:border-rose-600 data-[checked]:bg-rose-600 data-[checked]:border-rose-600'
                         }
                       />
                       <TagBadge name={tag.name} color={tag.color} size="md" />

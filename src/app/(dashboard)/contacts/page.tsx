@@ -582,13 +582,15 @@ export default function ContactsPage() {
           <TableHeader>
             <TableRow className="border-border hover:bg-transparent">
               <TableHead className="w-10">
-                <Checkbox
-                  checked={allOnPageSelected}
-                  indeterminate={!allOnPageSelected && someOnPageSelected}
-                  onCheckedChange={toggleSelectAll}
-                  disabled={contacts.length === 0}
-                  aria-label={t('selectAllOnPage')}
-                />
+                <div className="flex items-center justify-center">
+                  <Checkbox
+                    checked={allOnPageSelected}
+                    indeterminate={!allOnPageSelected && someOnPageSelected}
+                    onCheckedChange={toggleSelectAll}
+                    disabled={contacts.length === 0}
+                    aria-label={t('selectAllOnPage')}
+                  />
+                </div>
               </TableHead>
               <TableHead className="text-muted-foreground">{t('tableColumns.name')}</TableHead>
               <TableHead className="text-muted-foreground">{t('tableColumns.phone')}</TableHead>
@@ -642,12 +644,21 @@ export default function ContactsPage() {
                   className="border-border hover:bg-muted/50 cursor-pointer"
                   onClick={() => openDetail(contact.id)}
                 >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selected.has(contact.id)}
-                      onCheckedChange={() => toggleSelect(contact.id)}
-                      aria-label={t('selectContact', { name: contact.name || contact.phone })}
-                    />
+                  <TableCell
+                    className="w-10"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSelect(contact.id);
+                    }}
+                  >
+                    <div className="flex items-center justify-center">
+                      <Checkbox
+                        checked={selected.has(contact.id)}
+                        onCheckedChange={() => toggleSelect(contact.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={t('selectContact', { name: contact.name || contact.phone })}
+                      />
+                    </div>
                   </TableCell>
                   <TableCell className="text-foreground font-medium">
                     {contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}
