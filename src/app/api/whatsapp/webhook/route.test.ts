@@ -94,9 +94,9 @@ vi.mock('@supabase/supabase-js', () => ({
                 }),
               }),
             }),
-            update: (patch: Record<string, unknown>) => ({
+            update: () => ({
               eq: () => {
-                const chain: any = {
+                const chain = {
                   is: () => ({
                     select: () => {
                       h.state.firstInboundClaims++
@@ -108,7 +108,7 @@ vi.mock('@supabase/supabase-js', () => ({
                       })
                     },
                   }),
-                  then: (resolve: (val: any) => void) =>
+                  then: (resolve: (val: unknown) => void) =>
                     resolve({ data: null, error: null }),
                 }
                 return chain
