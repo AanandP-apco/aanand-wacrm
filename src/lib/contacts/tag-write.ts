@@ -101,3 +101,145 @@ export async function removeContactTag(
     );
   }
 }
+
+export interface BulkContactTagWriteInput {
+  accountId: string;
+  contactIds: string[];
+  tagIds: string[];
+}
+
+export async function bulkAddContactTags(
+  db: SupabaseClient,
+  input: BulkContactTagWriteInput
+): Promise<{ addedPairs: Array<{ contactId: string; tagId: string }> }> {
+  const { accountId, contactIds, tagIds } = input;
+  for (const cid of contactIds) {
+    if (!isUuid(cid)) throw new ContactTagWriteError(t('tags.invalidContactId'), 400);
+  }
+  for (const tid of tagIds) {
+    if (!isUuid(tid)) throw new ContactTagWriteError(t('tags.invalidTagId'), 400);
+  }
+
+  if (contactIds.length === 0 || tagIds.length === 0) {
+    return { addedPairs: [] };
+  }
+
+  const [contactsResult, tagsResult] = await Promise.all([
+    db
+      .from('contacts')
+      .select('id')
+      .in('id', contactIds)
+      .eq('account_id', accountId),
+    db
+      .from('tags')
+      .select('id')
+      .in('id', tagIds)
+      .eq('account_id', accountId),
+  ]);
+
+  if (contactsResult.error || tagsResult.error) {
+    throw new ContactTagWriteError(t('tags.verifyFailed'));
+  }
+
+  const validContactIds = new Set((contactsResult.data ?? []).map((c) => c.id));
+  const validTagIds = new Set((tagsResult.data ?? []).map((t) => t.id));
+
+  if (validContactIds.size === 0) {
+    throw new ContactTagWriteError(t('tags.contactNotFound'), 404);
+  }
+  if (validTagIds.size === 0) {
+    throw new ContactTagWriteError(t('tags.tagNotFound'), 404);
+  }
+
+  const { data: existingJoins, error: existingErr } = await db
+    .from('contact_tags')
+    .select('contact_id, tag_id')
+    .in('contact_id', Array.from(validContactIds))
+    .in('tag_id', Array.from(validTagIds));
+
+  if (existingErr) {
+    throw new ContactTagWriteError(t('tags.verifyFailed'));
+  }
+
+  const existingSet = new Set(
+    (existingJoins ?? []).map((j) => `${j.contact_id}:${j.tag_id}`)
+  );
+
+  const toInsert: Array<{ contact_id: string; tag_id: string }> = [];
+  const addedPairs: Array<{ contactId: string; tagId: string }> = [];
+
+  for (const cid of validContactIds) {
+    for (const tid of validTagIds) {
+      if (!existingSet.has(`${cid}:${tid}`)) {
+        toInsert.push({ contact_id: cid, tag_id: tid });
+        addedPairs.push({ contactId: cid, tagId: tid });
+      }
+    }
+  }
+
+  if (toInsert.length > 0) {
+    const { error: insertErr } = await db.from('contact_tags').insert(toInsert);
+    if (insertErr) {
+      throw new ContactTagWriteError(
+        t('tags.addFailed', { message: insertErr.message })
+      );
+    }
+  }
+
+  return { addedPairs };
+}
+
+export async function bulkRemoveContactTags(
+  db: SupabaseClient,
+  input: BulkContactTagWriteInput
+): Promise<{ removedCount: number }> {
+  const { accountId, contactIds, tagIds } = input;
+  for (const cid of contactIds) {
+    if (!isUuid(cid)) throw new ContactTagWriteError(t('tags.invalidContactId'), 400);
+  }
+  for (const tid of tagIds) {
+    if (!isUuid(tid)) throw new ContactTagWriteError(t('tags.invalidTagId'), 400);
+  }
+
+  if (contactIds.length === 0 || tagIds.length === 0) {
+    return { removedCount: 0 };
+  }
+
+  const [contactsResult, tagsResult] = await Promise.all([
+    db
+      .from('contacts')
+      .select('id')
+      .in('id', contactIds)
+      .eq('account_id', accountId),
+    db
+      .from('tags')
+      .select('id')
+      .in('id', tagIds)
+      .eq('account_id', accountId),
+  ]);
+
+  if (contactsResult.error || tagsResult.error) {
+    throw new ContactTagWriteError(t('tags.verifyFailed'));
+  }
+
+  const validContactIds = (contactsResult.data ?? []).map((c) => c.id);
+  const validTagIds = (tagsResult.data ?? []).map((t) => t.id);
+
+  if (validContactIds.length === 0 || validTagIds.length === 0) {
+    return { removedCount: 0 };
+  }
+
+  const { error: delErr, count } = await db
+    .from('contact_tags')
+    .delete({ count: 'exact' })
+    .in('contact_id', validContactIds)
+    .in('tag_id', validTagIds);
+
+  if (delErr) {
+    throw new ContactTagWriteError(
+      t('tags.removeFailed', { message: delErr.message })
+    );
+  }
+
+  return { removedCount: count ?? 0 };
+}

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { addContactTagIfAbsent, removeContactTag } from './tag-write';
+import {
+  addContactTagIfAbsent,
+  removeContactTag,
+  bulkAddContactTags,
+  bulkRemoveContactTags,
+} from './tag-write';
 
 interface FakeOptions {
   contact?: { id: string } | null;
@@ -110,5 +115,45 @@ describe('addContactTagIfAbsent', () => {
     await expect(addContactTagIfAbsent(db, input)).rejects.toThrow(
       'Failed to add contact tag: permission denied'
     );
+  });
+});
+
+describe('bulkAddContactTags & bulkRemoveContactTags', () => {
+  it('rejects invalid UUIDs with 400', async () => {
+    const db = {} as unknown as SupabaseClient;
+    await expect(
+      bulkAddContactTags(db, {
+        accountId: 'acct-1',
+        contactIds: ['not-uuid'],
+        tagIds: [input.tagId],
+      })
+    ).rejects.toMatchObject({ status: 400 });
+
+    await expect(
+      bulkRemoveContactTags(db, {
+        accountId: 'acct-1',
+        contactIds: [input.contactId],
+        tagIds: ['invalid'],
+      })
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('handles empty lists gracefully', async () => {
+    const db = {} as unknown as SupabaseClient;
+    await expect(
+      bulkAddContactTags(db, {
+        accountId: 'acct-1',
+        contactIds: [],
+        tagIds: [input.tagId],
+      })
+    ).resolves.toEqual({ addedPairs: [] });
+
+    await expect(
+      bulkRemoveContactTags(db, {
+        accountId: 'acct-1',
+        contactIds: [input.contactId],
+        tagIds: [],
+      })
+    ).resolves.toEqual({ removedCount: 0 });
   });
 });

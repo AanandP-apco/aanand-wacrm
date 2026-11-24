@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle, Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 interface ContactFormProps {
@@ -356,18 +356,23 @@ export function ContactForm({
                       key={tag.id}
                       type="button"
                       onClick={() => toggleTag(tag.id)}
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors cursor-pointer ${
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer border ${
                         selected
-                          ? 'ring-2 ring-primary ring-offset-1 ring-offset-border'
-                          : 'opacity-60 hover:opacity-100'
+                          ? 'ring-2 ring-primary ring-offset-1 ring-offset-card shadow-xs'
+                          : 'opacity-60 hover:opacity-100 hover:scale-[1.02]'
                       }`}
                       style={{
-                        backgroundColor: tag.color + '20',
+                        backgroundColor: `${tag.color}18`,
+                        borderColor: selected ? tag.color : `${tag.color}35`,
                         color: tag.color,
-                        borderColor: tag.color,
                       }}
                     >
+                      <span
+                        className="size-1.5 rounded-full shrink-0"
+                        style={{ backgroundColor: tag.color }}
+                      />
                       {tag.name}
+                      {selected && <Check className="size-3 ml-0.5" />}
                     </button>
                   );
                 })}

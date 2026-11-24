@@ -4,7 +4,7 @@ import {
   runAutomationsForTrigger,
   type AutomationContext,
 } from '@/lib/automations/engine';
-import { addContactTagIfAbsent } from './tag-write';
+import { addContactTagIfAbsent, bulkAddContactTags } from './tag-write';
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from './tag-chain';
 
 export { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from './tag-chain';
@@ -64,4 +64,62 @@ export async function addContactTagAndDispatch(
   });
 
   return { added: true, dispatched: true };
+}
+
+export interface BulkAddContactTagsInput {
+  db: SupabaseClient;
+  accountId: string;
+  contactIds: string[];
+  tagIds: string[];
+  context?: AutomationContext;
+}
+
+export interface BulkAddContactTagsResult {
+  addedCount: number;
+  dispatchedCount: number;
+  totalContacts: number;
+  totalTags: number;
+}
+
+/**
+ * Bulk server-side tag writer. Idempotently joins multiple tags to
+ * multiple contacts and triggers tag_added automations for newly added pairs.
+ */
+export async function bulkAddContactTagsAndDispatch(
+  input: BulkAddContactTagsInput
+): Promise<BulkAddContactTagsResult> {
+  const { addedPairs } = await bulkAddContactTags(input.db, {
+    accountId: input.accountId,
+    contactIds: input.contactIds,
+    tagIds: input.tagIds,
+  });
+
+  const depth = getTagChainDepth(input.context);
+  let dispatchedCount = 0;
+
+  if (depth < MAX_TAG_CHAIN_DEPTH) {
+    for (const pair of addedPairs) {
+      await runAutomationsForTrigger({
+        accountId: input.accountId,
+        triggerType: 'tag_added',
+        contactId: pair.contactId,
+        context: {
+          ...input.context,
+          tag_id: pair.tagId,
+          vars: {
+            ...(input.context?.vars ?? {}),
+            _tag_chain_depth: depth + 1,
+          },
+        },
+      });
+      dispatchedCount++;
+    }
+  }
+
+  return {
+    addedCount: addedPairs.length,
+    dispatchedCount,
+    totalContacts: input.contactIds.length,
+    totalTags: input.tagIds.length,
+  };
 }

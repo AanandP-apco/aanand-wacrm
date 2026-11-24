@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
@@ -49,11 +49,14 @@ import {
   SlidersHorizontal,
   Filter,
   X,
+  Tag as TagIcon,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
+import { TagBadge } from '@/components/contacts/tag-badge';
+import { BulkTagModal } from '@/components/contacts/bulk-tag-modal';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useLocale, useTranslations } from 'next-intl';
@@ -100,6 +103,11 @@ export default function ContactsPage() {
   // Bulk selection (page-scoped — only the loaded rows are selectable)
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkTagOpen, setBulkTagOpen] = useState(false);
+  const [bulkTagContactIds, setBulkTagContactIds] = useState<string[]>([]);
+
+  // Filter search inside tag popover
+  const [filterTagSearch, setFilterTagSearch] = useState('');
 
   // All tags for display
   const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
@@ -343,6 +351,13 @@ export default function ContactsPage() {
   const allTags = Object.values(tagsMap).sort((a, b) =>
     a.name.localeCompare(b.name)
   );
+
+  const displayedFilterTags = useMemo(() => {
+    const q = filterTagSearch.trim().toLowerCase();
+    if (!q) return allTags;
+    return allTags.filter((t) => t.name.toLowerCase().includes(q));
+  }, [allTags, filterTagSearch]);
+
   const hasActiveFilters = search.trim().length > 0 || selectedTagIds.length > 0;
 
   function toggleTagFilter(tagId: string) {
@@ -445,19 +460,32 @@ export default function ContactsPage() {
                 {selectedTagIds.length > 0 && (
                   <button
                     onClick={clearTagFilters}
-                    className="text-xs text-muted-foreground hover:text-foreground"
+                    className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
                   >
                     {t('clearAll')}
                   </button>
                 )}
               </div>
+              {allTags.length > 5 && (
+                <div className="p-2 border-b border-border/50">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
+                    <Input
+                      value={filterTagSearch}
+                      onChange={(e) => setFilterTagSearch(e.target.value)}
+                      placeholder={t('filterSearchPlaceholder')}
+                      className="h-7 text-xs pl-7 bg-muted/40"
+                    />
+                  </div>
+                </div>
+              )}
               {allTags.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-muted-foreground text-center">
                   {t('noTagsYet')}
                 </p>
               ) : (
                 <div className="max-h-64 overflow-y-auto py-1">
-                  {allTags.map((tag) => (
+                  {displayedFilterTags.map((tag) => (
                     <label
                       key={tag.id}
                       className="flex items-center gap-2.5 px-3 py-1.5 cursor-pointer hover:bg-muted/50"
@@ -467,13 +495,7 @@ export default function ContactsPage() {
                         onCheckedChange={() => toggleTagFilter(tag.id)}
                         aria-label={t('filterByTag', { name: tag.name })}
                       />
-                      <span
-                        className="size-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: tag.color }}
-                      />
-                      <span className="text-sm text-popover-foreground truncate">
-                        {tag.name}
-                      </span>
+                      <TagBadge name={tag.name} color={tag.color} size="sm" />
                     </label>
                   ))}
                 </div>
@@ -484,33 +506,22 @@ export default function ContactsPage() {
 
         {/* Active tag-filter chips */}
         {selectedTagIds.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
             {selectedTagIds.map((id) => {
               const tag = tagsMap[id];
               if (!tag) return null;
               return (
-                <span
+                <TagBadge
                   key={id}
-                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
-                  style={{
-                    backgroundColor: tag.color + '20',
-                    color: tag.color,
-                  }}
-                >
-                  {tag.name}
-                  <button
-                    onClick={() => toggleTagFilter(id)}
-                    aria-label={t('removeTagFilter', { name: tag.name })}
-                    className="hover:opacity-70"
-                  >
-                    <X className="size-3" />
-                  </button>
-                </span>
+                  name={tag.name}
+                  color={tag.color}
+                  onRemove={() => toggleTagFilter(id)}
+                />
               );
             })}
             <button
               onClick={clearTagFilters}
-              className="text-xs text-muted-foreground hover:text-foreground px-1"
+              className="text-xs text-muted-foreground hover:text-foreground px-1 cursor-pointer"
             >
               {t('clearAll')}
             </button>
@@ -520,29 +531,47 @@ export default function ContactsPage() {
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/40 px-4 py-2">
-          <p className="text-sm text-foreground">
-            {t('selectedCount', { count: selected.size })}
-          </p>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 dark:bg-primary/10 px-4 py-2.5 shadow-xs">
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
+            <span className="size-2 rounded-full bg-primary animate-pulse" />
+            <p className="text-sm font-medium text-foreground">
+              {t('selectedCount', { count: selected.size })}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <GatedButton
+              variant="outline"
               size="sm"
-              onClick={() => setSelected(new Set())}
-              className="text-muted-foreground hover:text-foreground"
+              canAct={canEdit}
+              gateReason={tGate('reasons.addOrImportContacts')}
+              onClick={() => {
+                setBulkTagContactIds([...selected]);
+                setBulkTagOpen(true);
+              }}
+              className="border-primary/30 text-foreground hover:bg-primary/15 gap-1.5 h-8 text-xs font-medium"
             >
-              {t('clearSelection')}
-            </Button>
+              <TagIcon className="size-3.5 text-primary" />
+              {t('manageTags')}
+            </GatedButton>
             <GatedButton
               variant="destructive"
               size="sm"
               canAct={canEdit}
               gateReason={tGate('reasons.deleteContacts')}
               onClick={() => setBulkDeleteOpen(true)}
+              className="gap-1.5 h-8 text-xs font-medium"
             >
-              <Trash2 className="size-4" />
+              <Trash2 className="size-3.5" />
               {t('deleteSelected')}
             </GatedButton>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelected(new Set())}
+              className="text-muted-foreground hover:text-foreground h-8 text-xs"
+            >
+              {t('clearSelection')}
+            </Button>
           </div>
         </div>
       )}
@@ -632,28 +661,40 @@ export default function ContactsPage() {
                   <TableCell className="text-muted-foreground hidden lg:table-cell text-sm">
                     {contact.company || <span className="text-muted-foreground">-</span>}
                   </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <div className="flex flex-wrap gap-1">
+                  <TableCell className="hidden md:table-cell" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex flex-wrap items-center gap-1">
                       {contact.tags && contact.tags.length > 0 ? (
-                        contact.tags.slice(0, 3).map((tag) => (
-                          <span
-                            key={tag.id}
-                            className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                            style={{
-                              backgroundColor: tag.color + '20',
-                              color: tag.color,
-                            }}
-                          >
-                            {tag.name}
-                          </span>
-                        ))
+                        <>
+                          {contact.tags.slice(0, 3).map((tag) => (
+                            <TagBadge key={tag.id} name={tag.name} color={tag.color} size="sm" />
+                          ))}
+                          {contact.tags.length > 3 && (
+                            <Popover>
+                              <PopoverTrigger
+                                render={
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer border border-border"
+                                  />
+                                }
+                              >
+                                +{contact.tags.length - 3}
+                              </PopoverTrigger>
+                              <PopoverContent align="start" className="w-56 p-2.5">
+                                <p className="text-xs font-semibold text-foreground mb-2">
+                                  {t('allContactTags')} ({contact.tags.length})
+                                </p>
+                                <div className="flex flex-wrap gap-1 max-h-48 overflow-y-auto">
+                                  {contact.tags.map((tag) => (
+                                    <TagBadge key={tag.id} name={tag.name} color={tag.color} size="md" />
+                                  ))}
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          )}
+                        </>
                       ) : (
-                        <span className="text-muted-foreground text-xs">-</span>
-                      )}
-                      {contact.tags && contact.tags.length > 3 && (
-                        <span className="text-[10px] text-muted-foreground">
-                          +{contact.tags.length - 3}
-                        </span>
+                        <span className="text-muted-foreground/60 text-xs">-</span>
                       )}
                     </div>
                   </TableCell>
@@ -682,6 +723,17 @@ export default function ContactsPage() {
                         align="end"
                         className="bg-popover border-border"
                       >
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBulkTagContactIds([contact.id]);
+                            setBulkTagOpen(true);
+                          }}
+                          className="text-popover-foreground focus:bg-muted focus:text-foreground"
+                        >
+                          <TagIcon className="size-4" />
+                          {t('manageTagsSingle')}
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
@@ -847,6 +899,19 @@ export default function ContactsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Bulk Tag Modal */}
+      <BulkTagModal
+        open={bulkTagOpen}
+        onOpenChange={setBulkTagOpen}
+        contactIds={bulkTagContactIds}
+        availableTags={allTags}
+        canCreateTags={canEditSettings}
+        onTagsUpdated={() => {
+          fetchContacts();
+          fetchTags();
+        }}
+        onTagCreated={fetchTags}
+      />
     </div>
   );
 }
