@@ -122,6 +122,44 @@ export function resolveInboundIdentity(
 }
 
 /**
+ * Extract recipient customer identity from an smb_message_echoes message.
+ *
+ * In an echo, the business is the sender and the customer is the recipient,
+ * so recipient identity is on `echo.to`, `echo.to_user_id`, `echo.to_parent_user_id`,
+ * paired with any matching entry from `contacts[]`.
+ */
+export function resolveEchoRecipientIdentity(
+  echo: {
+    to?: string
+    to_user_id?: string
+    to_parent_user_id?: string
+  },
+  contacts?: WaContactPayload[]
+): WaIdentity {
+  const targetPhone = normalizePhone(echo.to ?? '')
+  const targetUserId = cleanBsuid(echo.to_user_id)
+
+  const matched = contacts?.find((c) => {
+    if (targetPhone && c.wa_id && normalizePhone(c.wa_id) === targetPhone) {
+      return true
+    }
+    if (targetUserId && c.user_id && cleanBsuid(c.user_id) === targetUserId) {
+      return true
+    }
+    return false
+  }) ?? contacts?.[0]
+
+  return {
+    phone: targetPhone || normalizePhone(matched?.wa_id ?? ''),
+    waUserId: targetUserId ?? cleanBsuid(matched?.user_id),
+    waParentUserId:
+      cleanBsuid(echo.to_parent_user_id) ?? cleanBsuid(matched?.parent_user_id),
+    waUsername: cleanUsername(matched?.profile?.username),
+    name: matched?.profile?.name?.trim() ?? '',
+  }
+}
+
+/**
  * False when Meta gave us neither a phone nor a BSUID — there is no key
  * to find or create a contact under, so the delivery has to be dropped
  * rather than turned into an anonymous row.

@@ -5,6 +5,7 @@ import {
   identityDisplayName,
   isBusinessScopedUserId,
   resolveContactSendTarget,
+  resolveEchoRecipientIdentity,
   resolveInboundIdentity,
 } from './wa-identity'
 
@@ -234,6 +235,29 @@ describe('resolveContactSendTarget', () => {
     expect(
       resolveContactSendTarget({ phone: '', wa_user_id: 'garbage' })
     ).toBeNull()
+  })
+})
+
+describe('resolveEchoRecipientIdentity', () => {
+  it('resolves recipient phone from echo.to', () => {
+    const identity = resolveEchoRecipientIdentity(
+      { to: '+91 94442 79996' },
+      [{ wa_id: '919444279996', profile: { name: 'Aanand' } }]
+    )
+    expect(identity.phone).toBe('919444279996')
+    expect(identity.name).toBe('Aanand')
+    expect(hasUsableIdentity(identity)).toBe(true)
+  })
+
+  it('resolves recipient from BSUID when phone is absent', () => {
+    const identity = resolveEchoRecipientIdentity(
+      { to_user_id: 'US.13491208655302741918' },
+      [USERNAME_ONLY_CONTACT]
+    )
+    expect(identity.phone).toBe('')
+    expect(identity.waUserId).toBe('US.13491208655302741918')
+    expect(identity.name).toBe('Sheena Nelson')
+    expect(hasUsableIdentity(identity)).toBe(true)
   })
 })
 

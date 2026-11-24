@@ -94,20 +94,25 @@ vi.mock('@supabase/supabase-js', () => ({
                 }),
               }),
             }),
-            update: () => ({
-              eq: () => ({
-                is: () => ({
-                  select: () => {
-                    h.state.firstInboundClaims++
-                    const won = h.state.firstInboundUnclaimed
-                    h.state.firstInboundUnclaimed = false
-                    return Promise.resolve({
-                      data: won ? [{ id: 'conv-1' }] : [],
-                      error: null,
-                    })
-                  },
-                }),
-              }),
+            update: (patch: Record<string, unknown>) => ({
+              eq: () => {
+                const chain: any = {
+                  is: () => ({
+                    select: () => {
+                      h.state.firstInboundClaims++
+                      const won = h.state.firstInboundUnclaimed
+                      h.state.firstInboundUnclaimed = false
+                      return Promise.resolve({
+                        data: won ? [{ id: 'conv-1' }] : [],
+                        error: null,
+                      })
+                    },
+                  }),
+                  then: (resolve: (val: any) => void) =>
+                    resolve({ data: null, error: null }),
+                }
+                return chain
+              },
             }),
           }
         case 'broadcast_recipients':
@@ -205,6 +210,25 @@ vi.mock('@supabase/supabase-js', () => ({
               }
             },
           }
+        case 'flow_runs':
+          return {
+            update: () => ({
+              eq: () => ({
+                eq: () => ({
+                  eq: () => Promise.resolve({ data: [], error: null }),
+                }),
+              }),
+            }),
+          }
+        case 'message_reactions':
+          return {
+            delete: () => ({
+              eq: () => ({
+                eq: () => Promise.resolve({ error: null }),
+              }),
+            }),
+            upsert: () => Promise.resolve({ error: null }),
+          }
         default:
           throw new Error(`unexpected table: ${table}`)
       }
@@ -275,6 +299,7 @@ vi.mock('@/lib/webhooks/deliver', () => ({
 }))
 vi.mock('@/lib/whatsapp/message-status-sync', () => ({
   applyMessageStatus: h.applyMessageStatus,
+  applyPendingMessageStatuses: vi.fn(),
 }))
 
 import { POST } from './route'
@@ -1208,6 +1233,40 @@ describe('status webhook: scoped to the receiving number', () => {
   })
 })
 
+function echoRequest(
+  echo: Record<string, unknown>,
+  contacts?: Record<string, unknown>[],
+  field: string = 'smb_message_echoes'
+) {
+  const body = {
+    entry: [
+      {
+        changes: [
+          {
+            field,
+            value: {
+              metadata: { phone_number_id: 'pn-1' },
+              contacts,
+              message_echoes: [echo],
+            },
+          },
+        ],
+      },
+    ],
+  }
+  return signedPost(JSON.stringify(body))
+}
+
+async function runEchoWebhook(
+  echo: Record<string, unknown>,
+  contacts?: Record<string, unknown>[],
+  field: string = 'smb_message_echoes'
+) {
+  const res = await POST(echoRequest(echo, contacts, field))
+  for (const cb of h.state.afterCallbacks) await cb()
+  return res
+}
+
 describe('inbound webhook: first_inbound_message fires once', () => {
   const firstInboundRuns = () =>
     h.runAutomationsForTrigger.mock.calls.filter(
@@ -1227,5 +1286,66 @@ describe('inbound webhook: first_inbound_message fires once', () => {
     h.state.messageUpsertResult = []
     await runWebhook()
     expect(h.state.firstInboundClaims).toBe(0)
+  })
+})
+
+describe('message echoes (WhatsApp Business mobile app sync)', () => {
+  it('persists message sent via WhatsApp Business mobile app as agent message with status delivered', async () => {
+    await runEchoWebhook({
+      id: 'wamid.ECHO1',
+      to: '15551230000',
+      type: 'text',
+      text: { body: 'Hello from WhatsApp mobile app' },
+      timestamp: '1731910000',
+    })
+
+    expect(h.state.upsertCalls).toHaveLength(1)
+    const call = h.state.upsertCalls[0]
+    expect(call.row.sender_type).toBe('agent')
+    expect(call.row.content_text).toBe('Hello from WhatsApp mobile app')
+    expect(call.row.status).toBe('delivered')
+    expect(call.row.message_id).toBe('wamid.ECHO1')
+  })
+
+  it('handles message_echoes field name in addition to smb_message_echoes', async () => {
+    await runEchoWebhook(
+      {
+        id: 'wamid.ECHO2',
+        to: '15551230000',
+        type: 'text',
+        text: { body: 'Alternative field test' },
+        timestamp: '1731910000',
+      },
+      undefined,
+      'message_echoes'
+    )
+
+    expect(h.state.upsertCalls).toHaveLength(1)
+    expect(h.state.upsertCalls[0].row.message_id).toBe('wamid.ECHO2')
+  })
+
+  it('ignores duplicate echo messages idempotently', async () => {
+    h.state.messageUpsertResult = []
+    const res = await runEchoWebhook({
+      id: 'wamid.ECHO1',
+      to: '15551230000',
+      type: 'text',
+      text: { body: 'Replayed echo' },
+      timestamp: '1731910000',
+    })
+
+    expect((res as unknown as { init?: { status?: number } }).init?.status).toBe(200)
+    expect(h.state.upsertCalls).toHaveLength(1)
+  })
+
+  it('drops echo when recipient carries neither phone nor BSUID', async () => {
+    await runEchoWebhook({
+      id: 'wamid.ECHO_ANON',
+      type: 'text',
+      text: { body: 'Ghost message' },
+      timestamp: '1731910000',
+    })
+
+    expect(h.state.upsertCalls).toHaveLength(0)
   })
 })

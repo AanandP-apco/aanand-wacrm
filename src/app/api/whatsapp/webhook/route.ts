@@ -8,6 +8,7 @@ import {
   hasUsableIdentity,
   identityDisplayName,
   resolveInboundIdentity,
+  resolveEchoRecipientIdentity,
   type WaContactPayload,
   type WaIdentity,
 } from '@/lib/whatsapp/wa-identity'
@@ -31,7 +32,10 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
-import { applyMessageStatus } from '@/lib/whatsapp/message-status-sync'
+import {
+  applyMessageStatus,
+  applyPendingMessageStatuses,
+} from '@/lib/whatsapp/message-status-sync'
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -99,6 +103,23 @@ interface WhatsAppMessage {
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
   /**
+   * Recipient phone number or identity for smb_message_echoes (outbound
+   * message sent by business from WhatsApp Business mobile app).
+   */
+  to?: string
+  to_user_id?: string
+  to_parent_user_id?: string
+  edit?: {
+    original_message_id: string
+    message?: {
+      type?: string
+      text?: { body?: string }
+    }
+  }
+  revoke?: {
+    original_message_id: string
+  }
+  /**
    * Why Meta could not hand this message over. Set on a `type:
    * 'unsupported'` delivery — a view-once photo, a poll, a disappearing
    * message, or anything sent from an old or unofficial WhatsApp build.
@@ -139,6 +160,7 @@ interface WhatsAppWebhookEntry {
         parent_user_id?: string
       }>
       messages?: WhatsAppMessage[]
+      message_echoes?: WhatsAppMessage[]
       statuses?: Array<{
         id: string
         status: string
@@ -354,10 +376,14 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         }
       }
 
-      // Handle incoming messages
-      if (!value.messages || !value.contacts) continue
+      // Handle incoming customer messages & outbound message echoes
+      const hasMessages = Array.isArray(value.messages) && value.messages.length > 0
+      const hasEchoes = Array.isArray(value.message_echoes) && value.message_echoes.length > 0
 
-      const phoneNumberId = value.metadata.phone_number_id
+      if (!hasMessages && !hasEchoes) continue
+
+      const phoneNumberId = value.metadata?.phone_number_id
+      if (!phoneNumberId) continue
 
       // Find user's config by phone_number_id. `.single()` returns
       // PGRST116 for both 0 rows AND ≥2 rows — distinguish them so
@@ -387,7 +413,7 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         console.error(
           `Multiple configs (${configRows.length}) found for phone_number_id:`,
           phoneNumberId,
-          '— inbound message dropped. Resolve duplicates so each number maps to a single account.',
+          '— message dropped. Resolve duplicates so each number maps to a single account.',
           'Account owners:',
           configRows.map((r: { account_id: string; user_id: string }) => `${r.account_id} (admin ${r.user_id})`)
         )
@@ -398,26 +424,43 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       const decryptedAccessToken = decrypt(config.access_token)
 
-      for (let i = 0; i < value.messages.length; i++) {
-        const message = value.messages[i]
-        const contact = value.contacts[i] || value.contacts[0]
+      // Inbound messages from customer
+      if (hasMessages) {
+        for (let i = 0; i < value.messages!.length; i++) {
+          const message = value.messages![i]
+          const contact = value.contacts?.[i] || value.contacts?.[0]
 
-        await processMessage(
-          message,
-          contact,
-          // Tenancy — drives every contact / conversation lookup
-          // and the engines' active-row dispatch.
-          config.account_id,
-          // Audit / sender-of-record — used as the user_id on row
-          // inserts that need it for NOT NULL FK compliance. Always
-          // the admin who saved the WhatsApp config.
-          config.user_id,
-          decryptedAccessToken,
-          // Default ON: the column is NOT NULL DEFAULT TRUE, but a row
-          // read before migration 039 lands would have it undefined,
-          // and losing attachments is the failure mode worth avoiding.
-          config.mirror_inbound_media !== false
-        )
+          await processMessage(
+            message,
+            contact,
+            // Tenancy — drives every contact / conversation lookup
+            // and the engines' active-row dispatch.
+            config.account_id,
+            // Audit / sender-of-record — used as the user_id on row
+            // inserts that need it for NOT NULL FK compliance. Always
+            // the admin who saved the WhatsApp config.
+            config.user_id,
+            decryptedAccessToken,
+            // Default ON: the column is NOT NULL DEFAULT TRUE, but a row
+            // read before migration 039 lands would have it undefined,
+            // and losing attachments is the failure mode worth avoiding.
+            config.mirror_inbound_media !== false
+          )
+        }
+      }
+
+      // Outbound message echoes (sent from WhatsApp Business mobile app)
+      if (hasEchoes) {
+        for (const echo of value.message_echoes!) {
+          await processMessageEcho(
+            echo,
+            value.contacts,
+            config.account_id,
+            config.user_id,
+            decryptedAccessToken,
+            config.mirror_inbound_media !== false
+          )
+        }
       }
     }
   }
@@ -541,7 +584,9 @@ async function lookupInternalIdByMetaId(
 async function handleReaction(
   message: WhatsAppMessage,
   conversationId: string,
-  contactId: string
+  contactId: string,
+  actorType: 'customer' | 'agent' = 'customer',
+  actorId: string = contactId
 ) {
   const reaction = message.reaction
   if (!reaction?.message_id) return
@@ -564,8 +609,8 @@ async function handleReaction(
       .from('message_reactions')
       .delete()
       .eq('message_id', targetInternalId)
-      .eq('actor_type', 'customer')
-      .eq('actor_id', contactId)
+      .eq('actor_type', actorType)
+      .eq('actor_id', actorId)
     if (delError) {
       console.error('[webhook] reaction delete failed:', delError.message)
     }
@@ -578,8 +623,8 @@ async function handleReaction(
       {
         message_id: targetInternalId,
         conversation_id: conversationId,
-        actor_type: 'customer',
-        actor_id: contactId,
+        actor_type: actorType,
+        actor_id: actorId,
         emoji: reaction.emoji,
       },
       { onConflict: 'message_id,actor_type,actor_id' }
@@ -958,6 +1003,232 @@ async function processMessage(
     content_type: contentType,
     text: contentText,
   })
+}
+
+async function processMessageEcho(
+  echo: WhatsAppMessage,
+  contacts: WaContactPayload[] | undefined,
+  accountId: string,
+  configOwnerUserId: string,
+  accessToken: string,
+  mirrorMedia: boolean
+) {
+  // 1. Resolve recipient identity (customer receiving the message)
+  const identity = resolveEchoRecipientIdentity(echo, contacts)
+  if (!hasUsableIdentity(identity)) {
+    console.error(
+      '[webhook] echo message carries neither a recipient phone number nor a BSUID; skipping:',
+      echo.id
+    )
+    return
+  }
+
+  // 2. Find or create customer contact
+  const contactOutcome = await findOrCreateContact(
+    accountId,
+    configOwnerUserId,
+    identity
+  )
+  if (!contactOutcome) return
+  const contactRecord = contactOutcome.contact
+
+  // 3. Find or create conversation
+  const convResult = await findOrCreateConversation(
+    accountId,
+    configOwnerUserId,
+    contactRecord.id
+  )
+  if (!convResult) return
+  const conversation = convResult.conversation
+
+  if (convResult.created) {
+    await dispatchWebhookEvent(supabaseAdmin(), accountId, 'conversation.created', {
+      conversation_id: conversation.id,
+      contact_id: contactRecord.id,
+    })
+  }
+
+  // 4. Reactions sent by the business/agent on mobile app
+  if (echo.type === 'reaction') {
+    await handleReaction(
+      echo,
+      conversation.id,
+      contactRecord.id,
+      'agent',
+      configOwnerUserId
+    )
+    return
+  }
+
+  // 5. Message revocation (agent deleted message on mobile app)
+  if (echo.type === 'revoke' || echo.revoke?.original_message_id) {
+    const originalMetaId = echo.revoke?.original_message_id || echo.id
+    const targetInternalId = await lookupInternalIdByMetaId(
+      originalMetaId,
+      conversation.id
+    )
+    if (targetInternalId) {
+      await supabaseAdmin()
+        .from('messages')
+        .update({
+          content_text: '[Message deleted on WhatsApp]',
+          media_url: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', targetInternalId)
+    }
+    return
+  }
+
+  // 6. Message edit (agent edited message on mobile app)
+  if (echo.type === 'edit' || echo.edit?.original_message_id) {
+    const originalMetaId = echo.edit?.original_message_id
+    const newText = echo.edit?.message?.text?.body ?? echo.text?.body
+    if (originalMetaId && newText) {
+      const targetInternalId = await lookupInternalIdByMetaId(
+        originalMetaId,
+        conversation.id
+      )
+      if (targetInternalId) {
+        await supabaseAdmin()
+          .from('messages')
+          .update({
+            content_text: newText,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', targetInternalId)
+      }
+      return
+    }
+  }
+
+  // 7. Parse message content based on type
+  const {
+    contentText,
+    mediaUrl,
+    mediaType,
+    interactiveReplyId,
+    errorCode,
+    errorTitle,
+    errorDetails,
+  } = await parseMessageContent(
+    echo,
+    accessToken,
+    mirrorMedia ? { accountId } : null
+  )
+
+  // 8. Resolve swipe-reply context if present
+  let replyToInternalId: string | null = null
+  if (echo.context?.id) {
+    replyToInternalId = await lookupInternalIdByMetaId(
+      echo.context.id,
+      conversation.id
+    )
+    if (!replyToInternalId) {
+      console.warn(
+        '[webhook] echo reply context parent not found:',
+        echo.context.id
+      )
+    }
+  }
+
+  // 9. Map content type to allowed types
+  const ALLOWED_CONTENT_TYPES = new Set([
+    'text', 'image', 'document', 'audio', 'video',
+    'location', 'template', 'interactive',
+  ])
+  const contentType = ALLOWED_CONTENT_TYPES.has(echo.type)
+    ? echo.type
+    : echo.type === 'sticker'
+      ? 'image'
+      : echo.type === 'button'
+        ? 'interactive'
+        : 'text'
+
+  const receivedAt = echo.timestamp
+    ? new Date(parseInt(echo.timestamp) * 1000).toISOString()
+    : new Date().toISOString()
+
+  // 10. Idempotent insert. Messages sent by agent in WhatsApp Business mobile app
+  // are persisted with sender_type: 'agent' and status: 'delivered'.
+  const { data: insertedRows, error: msgError } = await supabaseAdmin()
+    .from('messages')
+    .upsert(
+      {
+        conversation_id: conversation.id,
+        sender_type: 'agent',
+        sender_id: configOwnerUserId,
+        content_type: contentType,
+        content_text: contentText,
+        media_url: mediaUrl,
+        media_type: mediaType,
+        message_id: echo.id,
+        status: 'delivered',
+        created_at: receivedAt,
+        reply_to_message_id: replyToInternalId,
+        interactive_reply_id: interactiveReplyId,
+        error_code: errorCode,
+        error_title: errorTitle,
+        error_details: errorDetails,
+      },
+      { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
+    )
+    .select('id')
+
+  if (msgError) {
+    console.error('[webhook] Error inserting echo message:', msgError)
+    return
+  }
+
+  if (!insertedRows || insertedRows.length === 0) {
+    console.info(
+      '[webhook] duplicate echo message ignored (idempotent replay):',
+      echo.id
+    )
+    return
+  }
+
+  // Drain any pending status updates that might have arrived out of order
+  await applyPendingMessageStatuses(supabaseAdmin(), accountId, echo.id)
+
+  // 11. Update conversation summary and reset unread_count (agent replied)
+  const lastMessageText = contentText || `[${echo.type}]`
+  const { error: convError } = await supabaseAdmin()
+    .from('conversations')
+    .update({
+      last_message_text: lastMessageText,
+      last_message_at: receivedAt,
+      unread_count: 0,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversation.id)
+
+  if (convError) {
+    console.error('[webhook] Error updating conversation on echo:', convError)
+  }
+
+  // 12. Human agent took action on the mobile app: pause any active bot Flows
+  try {
+    const { error: pauseErr } = await supabaseAdmin()
+      .from('flow_runs')
+      .update({
+        status: 'paused_by_agent',
+        ended_at: new Date().toISOString(),
+        end_reason: 'agent_replied',
+      })
+      .eq('account_id', accountId)
+      .eq('contact_id', contactRecord.id)
+      .eq('status', 'active')
+
+    if (pauseErr) {
+      console.error('[webhook] echo pause-flows failed:', pauseErr.message)
+    }
+  } catch (err) {
+    console.error(
+      '[webhook] echo pause-flows threw:',
+      err instanceof Error ? err.message : err
+    )
+  }
 }
 
 async function parseMessageContent(
