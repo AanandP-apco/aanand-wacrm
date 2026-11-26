@@ -597,6 +597,36 @@ describe('inbound webhook: unsupported messages keep Meta’s reason', () => {
       error_details: null,
     })
   })
+
+  it('handles template messages by extracting template name and parameters', async () => {
+    await runWebhook({
+      id: 'wamid.TMPL1',
+      from: '15551230000',
+      timestamp: '1700000000',
+      type: 'template',
+      template: {
+        name: 'order_status_update',
+        language: { code: 'en_US' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: 'Order #1234' },
+              { type: 'text', text: 'Shipped' },
+            ],
+          },
+        ],
+      },
+    })
+
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      content_type: 'template',
+      template_name: 'order_status_update',
+      content_text: '[Template: order_status_update (Order #1234, Shipped)]',
+      error_code: null,
+      status: 'delivered',
+    })
+  })
 })
 
 describe('inbound webhook: inbound media is mirrored (#466)', () => {

@@ -100,6 +100,20 @@ interface WhatsAppMessage {
    * payload and mirrors the label into it).
    */
   button?: { text?: string; payload?: string }
+  template?: {
+    name?: string
+    language?: { code?: string; policy?: string }
+    components?: Array<{
+      type: string
+      sub_type?: string
+      index?: number
+      parameters?: Array<{
+        type: string
+        text?: string
+        [key: string]: unknown
+      }>
+    }>
+  }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
   /**
@@ -710,6 +724,7 @@ async function processMessage(
     errorCode,
     errorTitle,
     errorDetails,
+    templateName,
   } = await parseMessageContent(
     message,
     accessToken,
@@ -773,6 +788,7 @@ async function processMessage(
         sender_type: 'customer',
         content_type: contentType,
         content_text: contentText,
+        template_name: templateName,
         media_url: mediaUrl,
         // Meta's MIME type for the attachment (migration 039). Was
         // discarded before, which forced the download path to guess an
@@ -1111,6 +1127,7 @@ async function processMessageEcho(
     errorCode,
     errorTitle,
     errorDetails,
+    templateName,
   } = await parseMessageContent(
     echo,
     accessToken,
@@ -1160,6 +1177,7 @@ async function processMessageEcho(
         sender_id: configOwnerUserId,
         content_type: contentType,
         content_text: contentText,
+        template_name: templateName,
         media_url: mediaUrl,
         media_type: mediaType,
         message_id: echo.id,
@@ -1259,6 +1277,7 @@ async function parseMessageContent(
   errorCode: number | null
   errorTitle: string | null
   errorDetails: string | null
+  templateName: string | null
 }> {
   // getMediaUrl signature is (mediaId, accessToken) — earlier code had
   // the args swapped, so every verification hit an invalid Meta URL and
@@ -1319,6 +1338,7 @@ async function parseMessageContent(
     errorCode: number | null
     errorTitle: string | null
     errorDetails: string | null
+    templateName: string | null
   } = {
     contentText: null,
     mediaUrl: null,
@@ -1329,6 +1349,7 @@ async function parseMessageContent(
     errorCode: null,
     errorTitle: null,
     errorDetails: null,
+    templateName: null,
   }
 
   switch (message.type) {
@@ -1449,6 +1470,28 @@ async function parseMessageContent(
         ...empty,
         contentText: label || payload,
         interactiveReplyId: payload || label,
+      }
+    }
+
+    case 'template': {
+      // Template echoes or inbound template messages. Extract template
+      // name and body parameter texts so it renders informatively in the inbox.
+      const templateName = message.template?.name || null
+      const bodyComponent = message.template?.components?.find(
+        (c) => c.type === 'body'
+      )
+      const params = bodyComponent?.parameters
+        ?.map((p) => p.text)
+        .filter(Boolean)
+      const paramText =
+        params && params.length > 0 ? ` (${params.join(', ')})` : ''
+      const contentText = templateName
+        ? `[Template: ${templateName}${paramText}]`
+        : '[Template message]'
+      return {
+        ...empty,
+        contentText,
+        templateName,
       }
     }
 

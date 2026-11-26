@@ -20,6 +20,7 @@ import {
   ExternalLink,
   Phone,
   Copy,
+  AlertCircle,
   type LucideIcon,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -162,6 +163,71 @@ function StatusIcon({
   }
 }
 
+function UnsupportedMessageBubble({
+  message,
+  t,
+  isAgent,
+}: {
+  message: Message;
+  t: ReturnType<typeof useTranslations>;
+  isAgent: boolean;
+}) {
+  const isTemplateError =
+    message.error_code === 131051 ||
+    Boolean(message.content_text?.toLowerCase().includes("not supported"));
+
+  const detail =
+    message.error_details ||
+    (message.content_text?.includes(" — ")
+      ? message.content_text
+          .replace(/^\[Unsupported message type:\s*/i, "")
+          .replace(/\]$/, "")
+      : null);
+
+  return (
+    <div className="flex flex-col gap-1.5 py-0.5 max-w-sm">
+      <div
+        className={cn(
+          "flex items-center gap-1.5 text-xs font-semibold",
+          isAgent
+            ? "text-primary-foreground"
+            : "text-amber-600 dark:text-amber-400"
+        )}
+      >
+        <AlertCircle className="h-4 w-4 shrink-0" />
+        <span>
+          {isTemplateError
+            ? t("unsupportedTemplateTitle")
+            : t("unsupportedTitle")}
+        </span>
+      </div>
+      <p
+        className={cn(
+          "text-xs leading-relaxed",
+          isAgent ? "text-primary-foreground/80" : "text-muted-foreground"
+        )}
+      >
+        {isTemplateError
+          ? t("unsupportedTemplateDesc")
+          : t("unsupportedGenericDesc")}
+      </p>
+      {detail && (
+        <div
+          className={cn(
+            "rounded px-2 py-1 text-[11px] font-mono break-words",
+            isAgent
+              ? "bg-primary-foreground/15 text-primary-foreground/90"
+              : "bg-muted-foreground/10 text-muted-foreground"
+          )}
+        >
+          {message.error_code ? `Meta (${message.error_code}): ` : ""}
+          {detail}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessageContent({
   message,
   template,
@@ -176,6 +242,21 @@ function MessageContent({
   isAgent: boolean;
   onOpenMedia?: (messageId: string) => void;
 }) {
+  const isUnsupported =
+    message.error_code === 131051 ||
+    (message.content_type as string) === "unsupported" ||
+    Boolean(message.content_text?.startsWith("[Unsupported message type:"));
+
+  if (isUnsupported) {
+    return (
+      <UnsupportedMessageBubble
+        message={message}
+        t={t}
+        isAgent={isAgent}
+      />
+    );
+  }
+
   // Passed to the media bubbles as a no-arg callback; `undefined` when the
   // parent wired up no viewer, which is what makes them non-clickable.
   const openMedia = onOpenMedia ? () => onOpenMedia(message.id) : undefined;
